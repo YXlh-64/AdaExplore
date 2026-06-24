@@ -136,6 +136,16 @@ def create_inference_server(server_type):
             api_key=os.environ.get("OPENAI_API_KEY"),
             base_url="https://api.openai.com/v1"
         )
+    elif server_type == "openrouter":
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "OPENROUTER_API_KEY must be set when server_type='openrouter'."
+            )
+        return openai.OpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1"
+        )
     elif server_type in ("claude", "anthropic"):
         return ClaudeOpenAICompatClient(
             api_key=os.environ.get("ANTHROPIC_API_KEY")
@@ -214,7 +224,7 @@ def query_inference_server(server, model_name: str, prompt: str, max_completion_
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test inference server with a prompt")
-    parser.add_argument("--server_type", type=str, default="azure", choices=["azure", "openai", "claude"])
+    parser.add_argument("--server_type", type=str, default="azure", choices=["azure", "openai", "openrouter", "claude"])
     parser.add_argument("--model_name", type=str, default="gpt-4o", help="Model name to use")
     parser.add_argument("--prompt", type=str, default="Hello, world! Please respond with a brief greeting.", help="Prompt to send to the model")
     parser.add_argument("--temperature", type=float, default=1.0, help="Temperature for generation")

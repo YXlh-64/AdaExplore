@@ -859,7 +859,7 @@ if __name__ == "__main__":
     parser.add_argument("--gpu_id", type=int, default=0)
 
     # Base Model Configs
-    parser.add_argument("--server_type", type=str, default="azure", choices=["azure", "openai", "claude"])
+    parser.add_argument("--server_type", type=str, default="azure", choices=["azure", "openai", "openrouter", "claude"])
     parser.add_argument("--model_name", type=str, default="gpt-5-mini")
     parser.add_argument("--temperature", type=float, default=0.6)
     parser.add_argument("--max_completion_tokens", type=int, default=16384)

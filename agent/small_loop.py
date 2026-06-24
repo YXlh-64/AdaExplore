@@ -220,7 +220,7 @@ if __name__ == "__main__":
     parser.add_argument("--problem_id", type=int, default=1)
     parser.add_argument("--dtype_str", type=str, default="fp32")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--server_type", type=str, default="azure", choices=["azure", "openai", "claude"])
+    parser.add_argument("--server_type", type=str, default="azure", choices=["azure", "openai", "openrouter", "claude"])
     parser.add_argument("--model_name", type=str, default="gpt-5-mini")
     parser.add_argument("--temperature", type=float, default=0.6)
     parser.add_argument("--max_completion_tokens", type=int, default=16384)

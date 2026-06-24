@@ -1,0 +1,34 @@
+test_source: SYN
+agent_type: MCTS
+test_list_path: config/smoke/test_list_syn_sample5.txt
+dtype_str: fp32
+gpu_name: NVIDIA GeForce RTX 2050
+gpu_architecture: Ampere
+gpu_ids: [0]
+num_processes: 1                  # keep at 1: free-tier rate limits + single GPU + MAX_CONCURRENT_EVALS=1
+use_remote_eval: true
+remote_eval_url: http://127.0.0.1:12017
+server_type: openrouter
+model_name: "nvidia/nemotron-3-ultra-550b-a55b:free"
+max_completion_tokens: 16384
+
+total_steps: 3                    # small on purpose: this run's job is to *generate failures*, not to optimize
+max_memory_round: 5
+pool_size: 5
+disable_reviewer: true            # matches config/SYN-v1/config_SYN-v1_none_MCTS.yaml (the paper's own Adapt-stage setting)
+
+save_path: outputs/MCTS_adapt_syn5_openrouter   # MUST contain "MCTS" -- see OPENROUTER_SAMPLE_BENCHMARK.md Gotcha #3
+general_memory_path: outputs/MCTS_adapt_syn5_openrouter/general_memory.txt
+memory_update: true               # this is what makes it an Adapt-stage run instead of an Explore-stage run
+knowledge_1_threshold: 3
+
+debug: false
+exploration_weight: 0.3
+expand_exploration_ratio: 1.0
+reward_alpha: 0.0
+small_step_limit: 2
+p_large: 0.2
+pool_size_extra_max: 0
+softmax_temperature: 1.0
+dummy: false
+geometric_p: 0.6

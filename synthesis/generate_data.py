@@ -29,23 +29,23 @@ def generate_self_instruct_prompt(examples: list[str], num_examples: int) -> str
     similar to the provided ones.
     """
     prompt = """You are given a collection of PyTorch kernel examples from a dataset. Each example is a complete Python file that defines:
-1. A Model class (inheriting from nn.Module) 
-2. A get_inputs() function that returns input tensors
-3. A get_init_inputs() function that returns initialization parameters
-4. Configuration variables (batch_size, dimensions, etc.)
+        1. A Model class (inheriting from nn.Module) 
+        2. A get_inputs() function that returns input tensors
+        3. A get_init_inputs() function that returns initialization parameters
+        4. Configuration variables (batch_size, dimensions, etc.)
 
-Your task is to generate NEW, CREATIVE, and FUNCTIONALLY DIFFERENT examples that follow the same structure and style but implement different operations or variations.
+        Your task is to generate NEW, CREATIVE, and FUNCTIONALLY DIFFERENT examples that follow the same structure and style but implement different operations or variations.
 
-Guidelines:
-- Each example should be a complete, self-contained Python file
-- The Model class should implement a different operation or combination of operations
-- Vary the tensor shapes, dimensions, and parameters
-- Keep the same code structure and style
-- Make sure the examples are diverse - don't just copy the patterns exactly
+        Guidelines:
+        - Each example should be a complete, self-contained Python file
+        - The Model class should implement a different operation or combination of operations
+        - Vary the tensor shapes, dimensions, and parameters
+        - Keep the same code structure and style
+        - Make sure the examples are diverse - don't just copy the patterns exactly
 
-Here are the example files:
+        Here are the example files:
 
-"""
+    """
     for i, example in enumerate(examples[:num_examples], 1):
         prompt += f"=== Example {i} ===\n{example}\n\n"
     
@@ -549,7 +549,7 @@ def generate_data(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate new kernel data using LLM")
-    parser.add_argument("--server_type", type=str, default="azure", choices=["azure", "openai", "claude"])
+    parser.add_argument("--server_type", type=str, default="azure", choices=["azure", "openai", "openrouter", "claude"])
     parser.add_argument("--model_name", type=str, default="gpt-5-mini", help="Model name to use")
     parser.add_argument("--prompt_style", type=str, default="composite", 
                         choices=list(PROMPT_STYLES.keys()),
