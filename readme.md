@@ -70,7 +70,7 @@ python -m uvicorn online_judge.app_with_queue:app --host 0.0.0.0 --port 12017
 
 ## Adapt: Failure-Driven Skill Acquisition
 
-The adaptation stage corresponds to the first half of the paper: AdaExplore synthesizes diverse kernel-style tasks, runs the agent on them, and summarizes repeated failures into a cross-task memory of rules such as invalid Triton usage patterns. In this repo, that workflow is implemented by `synthesis/` for task generation and `skill_memory/` for extracting or updating the memory file.
+The adaptation stage corresponds to the first half of the paper: AdaExplore synthesizes diverse kernel-style tasks, runs the agent on them, and summarizes repeated failures into a cross-task memory of rules such as invalid Triton usage patterns. In this repo, that workflow is implemented by `synthesis/` for task generation and `skill_memory/` for extracting or updating the memory file. Alongside that negative ("you cannot...") memory, the same run also distills a positive ("you should...") memory of recurring techniques from kernels that were both correct and at least as fast as the PyTorch baseline — see `skill_memory/readme.md` for the full negative/positive collection workflow.
 
 We also provide a pre-generated skill memory at `results/memory/general_memory_v1_200.txt`, so you can use it directly as the starting point for exploration runs. To run this stage, you can directly use the pre-generated dataset in `datasets/KernelBench_syn/syn_v1`. 
 
@@ -98,7 +98,7 @@ Run the agent on the synthesized set with online memory updates enabled:
 python agent/agent_entry.py --config config/SYN-v1/config_SYN-v1_none_MCTS.yaml
 ```
 
-This config uses `memory_update: true`, so failed generations are distilled into `outputs/SYN-v1_example_run/general_memory.txt` as the run progresses. If you want to refresh the bundled memory from historical logs under `outputs/...`, you can also build it offline with:
+This config uses `memory_update: true`, so failed generations are distilled into `outputs/SYN-v1_example_run/general_memory.txt` as the run progresses, and successful, at-least-baseline-speed generations are distilled into the sibling `outputs/SYN-v1_example_run/general_memory_positive.txt` at the same time. If you want to refresh the bundled memory from historical logs under `outputs/...`, you can also build it offline with:
 
 ```bash
 python skill_memory/skill_memory.py \
@@ -109,6 +109,8 @@ python skill_memory/skill_memory.py \
   --max-logs 3000 \
   --seed 42
 ```
+
+Add `--mode successes --knowledge-store-path outputs/example_run/general_memory_positive.txt` (and optionally `--min-speedup`) to the same command to build the positive memory from the same logs instead — see `skill_memory/readme.md` for both modes side by side.
 
 ## Explore: Diversity-Preserving Kernel Search
 

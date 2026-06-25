@@ -1,5 +1,6 @@
 import re
 from agentprompt.prompt_modules import generate_experience_guidance_prompt
+from agentprompt.prompt_modules import generate_best_practice_prompt
 from agentprompt.prompt_modules import generate_hardware_information_prompt
 from agentprompt.benchmarks.KB_prompt import KB_TRITON_PROMPT
 from agentprompt.benchmarks.FIT_prompt import FIT_TRITON_PROMPT
@@ -85,14 +86,15 @@ Objective:
 Now generate a kernel that can potentially outperform the best existing kernel and achieves the lowest possible runtime.
 """
 
-def generate_proposer_prompt(experience_guidance_path: str=None, pool_prompt: str=None, task: str="KB", task_params: dict=None, knowledge_1_threshold: int=3):
+def generate_proposer_prompt(experience_guidance_path: str=None, best_practice_path: str=None, pool_prompt: str=None, task: str="KB", task_params: dict=None, knowledge_1_threshold: int=3):
     prompt = PROBLEM_STATEMENT
 
     if task_params.get("example_arch_src", None) is not None and task_params.get("example_new_arch_src", None) is not None and task == "KB":
         prompt += EXAMPLE_FORMATS.format(example_arch_src=task_params.get("example_arch_src"), example_new_arch_src=task_params.get("example_new_arch_src"))
 
     prompt += generate_experience_guidance_prompt(experience_guidance_path, threshold=knowledge_1_threshold)
-    
+    prompt += generate_best_practice_prompt(best_practice_path, threshold=knowledge_1_threshold)
+
     # Extract required parameters from task prompt template
     task_template = task_to_prompt[task]
     required_keys = _extract_format_keys(task_template)

@@ -126,6 +126,19 @@ checked against existing ones with an LLM-based duplicate judge
 (`skill_memory/deduplicate_knowledge.py`) — duplicates bump an existing
 rule's score instead of adding a new line.
 
+The same `--memory_update` flag also mines the **positive** side: any step
+that's `correctness=True` *and* at least as fast as the PyTorch baseline
+(`fast_p >= --min_speedup_for_best_practice`, default `1.0`) gets asked for
+one grounded `"You should ..."` rule instead — a concrete technique
+actually present in that kernel (a fusion, a tiling choice, a masking
+pattern, ...), not vague praise. This writes to a *second*, separate file
+(`skill_memory/skill_memory.py::update_positive_memory`) so "must not do X"
+and "should do Y" rules never get mixed into one undifferentiated list.
+`general_memory_positive_path` defaults to a sibling of
+`general_memory_path` (`general_memory.txt` → `general_memory_positive.txt`)
+if you don't set it explicitly — nothing extra to add to the config above
+to get both.
+
 **Cost/time expectations**: 5 problems × 3 steps = 15 LLM-driven kernel
 attempts, *plus* one extra LLM call per failed attempt (memory
 distillation) and one more per dedup comparison once the file has entries.
@@ -141,7 +154,8 @@ You already have `outputs/MCTS_kbl2_sample5_openrouter/` on disk from the
 Explore-only run in §2, and it already contains real failures (confirmed:
 `2_15` has several `correctness: false` steps, `2_4_BUG` has an OOM
 failure). You can mine memory from that existing run, at zero additional
-GPU cost beyond what you've already spent, no new MCTS run needed:
+GPU cost beyond what you've already spent, no new MCTS run needed. This
+builds the *negative* file (failures → `"you cannot..."`):
 
 ```bash
 python skill_memory/skill_memory.py \
@@ -153,17 +167,35 @@ python skill_memory/skill_memory.py \
   --seed 42
 ```
 
+Run it a second time with `--mode successes` and a **different**
+`--knowledge-store-path` to build the *positive* file (successes →
+`"you should..."`) from the same run — the two memories must stay in
+separate files, never mixed:
+
+```bash
+python skill_memory/skill_memory.py \
+  --log-dir outputs/MCTS_kbl2_sample5_openrouter \
+  --knowledge-store-path outputs/skill_memory_from_kbl2_sample5_positive.txt \
+  --server openrouter \
+  --model-name "nvidia/nemotron-3-ultra-550b-a55b:free" \
+  --mode successes \
+  --min-speedup 1.0 \
+  --seed 42
+```
+
 Notes:
 - `--server` in `skill_memory.py` isn't restricted by an argparse
   `choices` list, and `create_inference_server()` already has the
   `openrouter` branch (`agent/inference_server.py` lines 139-148) — so this
   works today, no code changes needed.
-- `step_0` files are excluded automatically by `update_memory`'s own
-  filename filter, so the dummy-root entries can't pollute this.
+- `step_0` files are excluded automatically by both modes' filename
+  filter, so the dummy-root entries can't pollute either file.
 - Don't expect much output from only 2 finished problems — this is meant
   as a "see the mechanism work," not "build a real memory base" exercise.
   For a real memory base you'd point `--log-dir` at a much larger
-  Explore/Adapt run.
+  Explore/Adapt run. The positive run in particular only has `2_15`'s
+  steps 1-2 to draw from (verified: `correctness=True`, `fast_p` ≈ 1.0,
+  ≈ 1.002 — see §8) — `2_4_BUG`'s failure doesn't qualify here.
 
 ### 3.3 Option C (optional, expensive): regenerate the synthetic dataset itself
 
@@ -209,9 +241,17 @@ cp config/smoke/config_kbl2_sample5_openrouter.yaml \
 Edit `config_kbl2_sample5_ownmemory.yaml`:
 ```yaml
 general_memory_path: outputs/MCTS_adapt_syn5_openrouter/general_memory.txt  # or outputs/skill_memory_from_kbl2_sample5.txt
+general_memory_positive_path: outputs/MCTS_adapt_syn5_openrouter/general_memory_positive.txt  # set explicitly -- see note below
 memory_update: false        # Explore-time should not also be rewriting memory mid-run
 save_path: outputs/MCTS_kbl2_sample5_ownmemory   # must contain "MCTS"; must differ from the original run
 ```
+
+`general_memory_positive_path` only gets **auto-derived** when
+`--memory_update`/`memory_update: true` is set (it's a convenience for the
+run that's *building* memory). Here `memory_update: false` — you're only
+*reading* memory this time — so if you built a positive file in §3.1/§3.2
+and want this Explore run to actually use it, you must set
+`general_memory_positive_path` yourself, same as `general_memory_path`.
 
 Then run it the same way as §2, and compare against the original bundled-
 memory run with `stats.py` (§5.4) — same fixed 5-problem sample both times,
@@ -293,26 +333,36 @@ python tool_scripts/eval_one_kernel.py outputs/<save_path>/<level>_<id>/global_b
   --use_remote_eval --remote_eval_url http://127.0.0.1:12017
 ```
 
-### 5.7 Inspecting the skill-memory file itself (Adapt-specific)
+### 5.7 Inspecting the skill-memory files themselves (Adapt-specific)
 
-The memory file (e.g. `results/memory/general_memory_v1_200.txt`, or
-whatever `general_memory_path` you pointed an Adapt run at) is plain text,
-one rule per line:
+An Adapt run with `memory_update: true` writes **two** files, both plain
+text, one rule per line, same `<rule>||<score>` shape, deliberately kept
+separate so constraint-rules and style-suggestion-rules never get mixed in
+one list the model has to disambiguate on its own:
 ```
-You cannot ...||<score>
+general_memory.txt:           You cannot ...||<score>     # from failed steps
+general_memory_positive.txt:  You should ...||<score>     # from successful, >= baseline-speed steps
 ```
-`<score>` is a frequency counter — it increments each time the LLM-based
-duplicate judge decides a newly-mined rule restates an existing one,
-instead of appending a new line.
+`<score>` is a frequency counter in both — it increments each time the
+LLM-based duplicate judge decides a newly-mined rule restates an existing
+one, instead of appending a new line.
 
 To check whether an Adapt run actually changed anything:
 ```bash
-wc -l outputs/MCTS_adapt_syn5_openrouter/general_memory.txt   # line count before vs. after
+wc -l outputs/MCTS_adapt_syn5_openrouter/general_memory.txt            # negative: line count before vs. after
+wc -l outputs/MCTS_adapt_syn5_openrouter/general_memory_positive.txt   # positive: same check
 diff <(sort old_memory.txt) <(sort outputs/MCTS_adapt_syn5_openrouter/general_memory.txt)
 ```
-Or just watch the run's stdout live — `update_memory()` prints the
-existing memory's first entry/score before processing, and the dedup judge
-logs each decision as it runs.
+Or just watch the run's stdout live — `update_memory()`/`update_positive_memory()`
+each print their own file's first entry/score before processing (labeled
+`"skill memory (negative: ...)"` / `"skill memory (positive: ...)"`), and
+the dedup judge logs each decision as it runs.
+
+Expect the positive file to fill slower than the negative one in a small
+run like our `total_steps: 3` / 5-problem smoke config: it only fires on
+steps that are *both* correct *and* at least `min_speedup_for_best_practice`
+(default `1.0`) — a higher bar than "any failure," which is most of what a
+weak free-tier model produces early on. That's expected, not a bug.
 
 Two things that look like bugs but aren't:
 - **An empty or unchanged memory file after a run.** `update_memory` only
@@ -321,12 +371,14 @@ Two things that look like bugs but aren't:
   cleanly support a one-sentence rule — that attempt is silently skipped.
   Few problems × few steps (our `total_steps: 3` smoke config) means few
   chances for this to trigger at all.
-- **A `general_memory_path + ".lock"` file appearing during the run.**
-  That's the file lock `agent_entry.py` takes before calling
-  `update_memory()`, to stop two parallel workers corrupting the file
-  (`num_processes` > 1 case). It should be released and effectively
-  inert once the run exits cleanly — if a `.lock` file lingers *and* a new
-  run hangs acquiring it, that indicates the previous run was killed
+- **A `general_memory_path + ".lock"` (and `general_memory_positive_path + ".lock"`)
+  file appearing during the run.** Those are the two file locks
+  `agent_entry.py` takes — one per memory file — before calling
+  `update_memory()`/`update_positive_memory()`, to stop two parallel workers
+  corrupting either file (`num_processes` > 1 case). They should be
+  released and effectively inert once the run exits cleanly — if a `.lock`
+  file lingers *and* a new run hangs acquiring it, that indicates the
+  previous run was killed
   uncleanly while holding it, not a problem with your config.
 
 ---

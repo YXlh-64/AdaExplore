@@ -37,8 +37,30 @@ from agent.small_loop import run_small_loop
 from agent.inference_server import create_inference_server
 from agent.utils import read_metrics
 from agent.utils import load_test_source, calculate_score, load_config_from_yaml, load_tasks_from_test_list, EXAMPLE_ARCH_SRC, EXAMPLE_NEW_ARCH_SRC
-from skill_memory.skill_memory import update_memory
+from skill_memory.skill_memory import update_memory, update_positive_memory
 from agent.mcts import mcts_search
+
+def _with_file_lock(lock_file_path: str, fn, lock_timeout: int = 1800):
+    """Acquire an exclusive file lock at lock_file_path, run fn(), then release it.
+    Used to serialize concurrent workers writing to the same memory file."""
+    lock_acquired = False
+    start_time = time.time()
+    with open(lock_file_path, "w") as lock_file:
+        while time.time() - start_time < lock_timeout:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                lock_acquired = True
+                break
+            except IOError:
+                time.sleep(0.1)  # Wait 100ms before retrying
+
+        if not lock_acquired:
+            raise TimeoutError(f"Failed to acquire lock for {lock_file_path} within {lock_timeout} seconds")
+
+        try:
+            fn()
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 def agent_entry(args: argparse.Namespace, inference_server, level, problem_id):
     """
@@ -137,26 +159,28 @@ def agent_entry(args: argparse.Namespace, inference_server, level, problem_id):
         json.dump(global_best_metrics.to_dict(), f, indent=4)
 
     if args.memory_update:
-        lock_file_path = args.general_memory_path + ".lock"
-        lock_timeout = 1800  # 30 minutes timeout
-        lock_acquired = False
-        start_time = time.time()
-        with open(lock_file_path, "w") as lock_file:
-            while time.time() - start_time < lock_timeout:
-                try:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    lock_acquired = True
-                    break
-                except IOError:
-                    time.sleep(0.1)  # Wait 100ms before retrying
-            
-            if not lock_acquired:
-                raise TimeoutError(f"Failed to acquire lock for {lock_file_path} within {lock_timeout} seconds")
-            
-            try:
-                update_memory(memory_path=args.general_memory_path, log_path=result_save_path, server=inference_server, model_name=args.model_name, filter_max_difference=True)
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        # Negative memory: "you cannot..." rules distilled from this problem's failed steps.
+        _with_file_lock(
+            args.general_memory_path + ".lock",
+            lambda: update_memory(
+                memory_path=args.general_memory_path, log_path=result_save_path,
+                server=inference_server, model_name=args.model_name, filter_max_difference=True,
+            ),
+        )
+        # Positive memory: "you should..." best practices distilled from this problem's
+        # correct, at-least-as-fast-as-baseline steps. Same on/off switch (--memory_update)
+        # as negative memory; --general_memory_positive_path defaults to a sibling file next
+        # to --general_memory_path (set in agent_entry.py's __main__) if not given explicitly.
+        positive_memory_path = getattr(args, 'general_memory_positive_path', None)
+        if positive_memory_path:
+            _with_file_lock(
+                positive_memory_path + ".lock",
+                lambda: update_positive_memory(
+                    memory_path=positive_memory_path, log_path=result_save_path,
+                    server=inference_server, model_name=args.model_name,
+                    min_speedup=getattr(args, 'min_speedup_for_best_practice', 1.0),
+                ),
+            )
 
     return global_best_kernel, global_best_metrics
 
@@ -287,6 +311,20 @@ if __name__ == "__main__":
     )
     parser.add_argument("--memory_update", action="store_true", default=False)
     parser.add_argument("--knowledge_1_threshold", type=int, default=3) # The threshold for knowledge_1
+    parser.add_argument(
+        "--general_memory_positive_path",
+        type=str,
+        default=None,
+        help="Path to the positive (\"you should...\") best-practice memory file. If --memory_update "
+             "is set and this is left unset, defaults to a sibling of --general_memory_path "
+             "(e.g. general_memory_v1_200.txt -> general_memory_v1_200_positive.txt).",
+    )
+    parser.add_argument(
+        "--min_speedup_for_best_practice",
+        type=float,
+        default=1.0,
+        help="Minimum fast_p a correct kernel must reach to be mined for positive/best-practice memory (default: 1.0, i.e. at least as fast as the PyTorch baseline).",
+    )
 
     # Resume Configs
     parser.add_argument("--resume_from", type=str, default=None, help="Resume from existing log folder (e.g., outputs/MCTS_xxx)")
@@ -322,6 +360,13 @@ if __name__ == "__main__":
     # Load config from YAML file if provided
     args = load_config_from_yaml(args, parser)
     assert args.num_processes % len(args.gpu_ids) == 0, "Number of processes must be a multiple of the number of GPUs"
+
+    # Default the positive memory file to a sibling of the negative one, so enabling
+    # --memory_update builds best-practice memory alongside failure memory without
+    # requiring a separate config field.
+    if args.memory_update and not args.general_memory_positive_path and args.general_memory_path:
+        base, ext = os.path.splitext(args.general_memory_path)
+        args.general_memory_positive_path = f"{base}_positive{ext}"
 
     start_time = time.strftime("%Y%m%d-%H%M%S", time.localtime())
     try:

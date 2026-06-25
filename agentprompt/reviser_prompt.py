@@ -1,5 +1,6 @@
 import re
 from agentprompt.prompt_modules import generate_experience_guidance_prompt
+from agentprompt.prompt_modules import generate_best_practice_prompt
 from agentprompt.prompt_modules import generate_hardware_information_prompt
 from src.utils import read_file
 from src.eval import KernelExecResult
@@ -77,7 +78,7 @@ Here is some experience guidance that you should keep in mind:
 
 """
 
-def generate_reviser_prompt(custom_triton_kernels: str=None, run_info: str=None, experience_guidance_path: str=None, task_params: dict=None, knowledge_1_threshold: int=3):
+def generate_reviser_prompt(custom_triton_kernels: str=None, run_info: str=None, experience_guidance_path: str=None, best_practice_path: str=None, task_params: dict=None, knowledge_1_threshold: int=3):
     # Extract required parameters from task prompt template
     required_keys = _extract_format_keys(TASK_INSTRUCTION)
     
@@ -98,6 +99,7 @@ def generate_reviser_prompt(custom_triton_kernels: str=None, run_info: str=None,
     
     prompt = PROBLEM_STATEMENT
     prompt += generate_experience_guidance_prompt(experience_guidance_path, threshold=knowledge_1_threshold)
+    prompt += generate_best_practice_prompt(best_practice_path, threshold=knowledge_1_threshold)
     prompt += generate_hardware_information_prompt(task_params.get('gpu_name'), task_params.get('gpu_architecture'))
     prompt += TASK_INSTRUCTION.format(**format_dict)
     return prompt

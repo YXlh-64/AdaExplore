@@ -26,9 +26,10 @@ def single_small_step(ref_arch_src: str, inference_server: str, previous_kernels
         # TODO: currently, only filter wrong attempts for tuner agent, not for reviser agent, to prevent repeating the same mistakes
         reviser_prompt = generate_reviser_prompt(
             task_params=args.task_params,
-            custom_triton_kernels=previous_kernels[-1] if len(previous_kernels) > 0 else None, 
+            custom_triton_kernels=previous_kernels[-1] if len(previous_kernels) > 0 else None,
             run_info=previous_metrics[-1] if len(previous_metrics) > 0 else None,
             experience_guidance_path=args.general_memory_path,
+            best_practice_path=getattr(args, 'general_memory_positive_path', None),
             knowledge_1_threshold=args.knowledge_1_threshold,
         )
         reviser_output = query_inference_server(
@@ -44,10 +45,11 @@ def single_small_step(ref_arch_src: str, inference_server: str, previous_kernels
     # Tuner Agent
     tuner_prompt = generate_tuner_prompt(
         task_params=args.task_params,
-        previous_kernels=previous_kernels, 
-        previous_metrics=previous_metrics, 
+        previous_kernels=previous_kernels,
+        previous_metrics=previous_metrics,
         tuning_guidance=reviser_output,
         experience_guidance_path=args.general_memory_path,
+        best_practice_path=getattr(args, 'general_memory_positive_path', None),
         knowledge_1_threshold=args.knowledge_1_threshold,
         filter_wrong_attempts=getattr(args, 'filter_wrong_attempts', False),
     )
@@ -124,7 +126,8 @@ def single_large_step(
     proposer_prompt = generate_proposer_prompt(
         task=args.test_source,
         task_params=args.task_params,
-        experience_guidance_path=args.general_memory_path, 
+        experience_guidance_path=args.general_memory_path,
+        best_practice_path=getattr(args, 'general_memory_positive_path', None),
         pool_prompt=pool_prompt,
         knowledge_1_threshold=args.knowledge_1_threshold,
     )
